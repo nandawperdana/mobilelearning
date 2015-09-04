@@ -4,7 +4,7 @@
  * Class to handle all db operations
  * This class will have CRUD methods for database tables
  *
- * @author Ravi Tamada
+ * @author NwP
  * @link URL Tutorial link
  */
 class DbHandler {
@@ -13,53 +13,9 @@ class DbHandler {
 
     function __construct() {
         require_once dirname(__FILE__) . '/DbConnect.php';
-        // opening db connection
+// opening db connection
         $db = new DbConnect();
         $this->conn = $db->connect();
-    }
-
-    /* ------------- `users` table method ------------------ */
-
-    /**
-     * Creating new user
-     * @param String $name User full name
-     * @param String $email User login email id
-     * @param String $password User login password
-     */
-    public function createUser($name, $email, $password) {
-        require_once 'PassHash.php';
-        $response = array();
-
-        // First check if user already existed in db
-        if (!$this->isUserExists($email)) {
-            // Generating password hash
-            $password_hash = PassHash::hash($password);
-
-            // Generating API key
-            $api_key = $this->generateApiKey();
-
-            // insert query
-            $stmt = $this->conn->prepare("INSERT INTO users(name, email, password_hash, api_key, status) values(?, ?, ?, ?, 1)");
-            $stmt->bind_param("ssss", $name, $email, $password_hash, $api_key);
-
-            $result = $stmt->execute();
-
-            $stmt->close();
-
-            // Check for successful insertion
-            if ($result) {
-                // User successfully inserted
-                return USER_CREATED_SUCCESSFULLY;
-            } else {
-                // Failed to create user
-                return USER_CREATE_FAILED;
-            }
-        } else {
-            // User with same email already existed in the db
-            return USER_ALREADY_EXISTED;
-        }
-
-        return $response;
     }
 
     /**
@@ -70,9 +26,13 @@ class DbHandler {
      */
     public function checkLogin($email, $password) {
         // fetching user by email
-        $stmt = $this->conn->prepare("SELECT password_hash FROM users WHERE email = ?");
+        $pass_hash = md5($password);
 
-        $stmt->bind_param("s", $email);
+        $query = "SELECT password FROM mahasiswa WHERE email = ? UNION SELECT password FROM dosen WHERE email = ?";
+
+        $stmt = $this->conn->prepare($query);
+
+        $stmt->bind_param("ss", $email, $email);
 
         $stmt->execute();
 
@@ -88,7 +48,7 @@ class DbHandler {
 
             $stmt->close();
 
-            if (PassHash::check_password($password_hash, $password)) {
+            if (PassHash::check_password($password_hash, $pass_hash)) {
                 // User password is correct
                 return TRUE;
             } else {
@@ -105,12 +65,14 @@ class DbHandler {
 
     /**
      * Checking for duplicate user by email address
-     * @param String $email email to check in db
+     * @param String $email
+
+      email to check in db
      * @return boolean
      */
     private function isUserExists($email) {
-        $stmt = $this->conn->prepare("SELECT id from users WHERE email = ?");
-        $stmt->bind_param("s", $email);
+        $stmt = $this->conn->prepare("SELECT nim from mahasiswa WHERE email = ? UNION SELECT nik from dosen WHERE email = ?");
+        $stmt->bind_param("ss", $email, $email);
         $stmt->execute();
         $stmt->store_result();
         $num_rows = $stmt->num_rows;
@@ -119,22 +81,27 @@ class DbHandler {
     }
 
     /**
-     * Fetching user by email
-     * @param String $email User email id
+     * Fetching mahasiswa by email
+     * @param String $email
+
+      User email id
      */
     public function getUserByEmail($email) {
-        $stmt = $this->conn->prepare("SELECT name, email, api_key, status, created_at FROM users WHERE email = ?");
-        $stmt->bind_param("s", $email);
+        $stmt = $this->conn->prepare("SELECT nim, nama_mhs, level "
+                . "FROM mahasiswa "
+                . "WHERE email = ? "
+                . "UNION SELECT nim, nama_dosen, level "
+                . "FROM dosen "
+                . "WHERE email = ?");
+        $stmt->bind_param("ss", $email, $email);
         if ($stmt->execute()) {
             // $user = $stmt->get_result()->fetch_assoc();
-            $stmt->bind_result($name, $email, $api_key, $status, $created_at);
+            $stmt->bind_result($id, $nama, $level);
             $stmt->fetch();
             $user = array();
-            $user["name"] = $name;
-            $user["email"] = $email;
-            $user["api_key"] = $api_key;
-            $user["status"] = $status;
-            $user["created_at"] = $created_at;
+            $user["id"] = $id;
+            $user["nama"] = $nama;
+            $user["level"] = $level;
             $stmt->close();
             return $user;
         } else {
@@ -143,56 +110,53 @@ class DbHandler {
     }
 
     /**
-     * Fetching user api key
-     * @param String $user_id user id primary key in user table
-     */
-    public function getApiKeyById($user_id) {
-        $stmt = $this->conn->prepare("SELECT api_key FROM users WHERE id = ?");
-        $stmt->bind_param("i", $user_id);
-        if ($stmt->execute()) {
-            // $api_key = $stmt->get_result()->fetch_assoc();
-            // TODO
-            $stmt->bind_result($api_key);
-            $stmt->close();
-            return $api_key;
-        } else {
-            return NULL;
-        }
-    }
+     * Fetching mahasiswa by email
+     * @param String $email
 
-    /**
-     * Fetching user id by api key
-     * @param String $api_key user api key
+      User email id
      */
-    public function getUserId($api_key) {
-        $stmt = $this->conn->prepare("SELECT id FROM users WHERE api_key = ?");
-        $stmt->bind_param("s", $api_key);
+    public function getMahasiswaByEmail($email) {
+        $stmt = $this->conn->prepare("SELECT nim, nama_mhs, no_hp, email FROM mahasiswa WHERE email = ?");
+        $stmt->bind_param("s", $email);
         if ($stmt->execute()) {
-            $stmt->bind_result($user_id);
+            // $user = $stmt->get_result()->fetch_assoc();
+            $stmt->bind_result($nim, $nama_mhs, $no_hp, $email);
             $stmt->fetch();
-            // TODO
-            // $user_id = $stmt->get_result()->fetch_assoc();
+            $mhs = array();
+            $mhs["nim"] = $nim;
+            $mhs["nama_mhs"] = $nama_mhs;
+            $mhs["no_hp"] = $no_hp;
+            $mhs["email"] = $email;
             $stmt->close();
-            return $user_id;
+            return $mhs;
         } else {
             return NULL;
         }
     }
 
     /**
-     * Validating user api key
-     * If the api key is there in db, it is a valid key
-     * @param String $api_key user api key
-     * @return boolean
+     * Fetching dosen by email
+     * @param String $email
+
+      User email id
      */
-    public function isValidApiKey($api_key) {
-        $stmt = $this->conn->prepare("SELECT id from users WHERE api_key = ?");
-        $stmt->bind_param("s", $api_key);
-        $stmt->execute();
-        $stmt->store_result();
-        $num_rows = $stmt->num_rows;
-        $stmt->close();
-        return $num_rows > 0;
+    public function getDosenByEmail($email) {
+        $stmt = $this->conn->prepare("SELECT nik, nama_dosen, no_hp, email FROM dosen WHERE email = ?");
+        $stmt->bind_param("s", $email);
+        if ($stmt->execute()) {
+            // $user = $stmt->get_result()->fetch_assoc();
+            $stmt->bind_result($nik, $nama_dosen, $no_hp, $email);
+            $stmt->fetch();
+            $dosen = array();
+            $dosen["nik"] = $nik;
+            $dosen["nama_dosen"] = $nama_dosen;
+            $dosen["no_hp"] = $no_hp;
+            $dosen["email"] = $email;
+            $dosen->close();
+            return $dosen;
+        } else {
+            return NULL;
+        }
     }
 
     /**
@@ -202,54 +166,31 @@ class DbHandler {
         return md5(uniqid(rand(), true));
     }
 
-    /* ------------- `tasks` table method ------------------ */
-
     /**
-     * Creating new task
-     * @param String $user_id user id to whom task belongs to
-     * @param String $task task text
+     * get mata kuliah
+     * @param type $id
+     * @return type
      */
-    public function createTask($user_id, $task) {
-        $stmt = $this->conn->prepare("INSERT INTO tasks(task) VALUES(?)");
-        $stmt->bind_param("s", $task);
-        $result = $stmt->execute();
-        $stmt->close();
+    public function getMK($id) {
+        $stmt = $this->conn->prepare("SELECT mhs.nim, mhs.nama_mhs, mk.kode_mk, mk.nama_mk, mk.sks "
+                . "FROM matakuliah mk, mahasiswa mhs, mahasiswa_ambil_mk ma "
+                . "WHERE mhs.nim = ? AND mhs.nim = ma.nim "
+                . "UNION SELECT d.nik, d.nama_dosen, mk.kode_mk, mk.nama_mk, mk.sks "
+                . "FROM matakuliah mk, dosen d, dosen_ambil_mk da "
+                . "WHERE d.nik = ? AND da.nik = d.nik AND da.kode_mk = mk.kode_mk");
+        $stmt->bind_param("ss", $id, $id);
 
-        if ($result) {
-            // task row created
-            // now assign the task to user
-            $new_task_id = $this->conn->insert_id;
-            $res = $this->createUserTask($user_id, $new_task_id);
-            if ($res) {
-                // task created successfully
-                return $new_task_id;
-            } else {
-                // task failed to create
-                return NULL;
-            }
-        } else {
-            // task failed to create
-            return NULL;
-        }
-    }
-
-    /**
-     * Fetching single task
-     * @param String $task_id id of the task
-     */
-    public function getTask($task_id, $user_id) {
-        $stmt = $this->conn->prepare("SELECT t.id, t.task, t.status, t.created_at from tasks t, user_tasks ut WHERE t.id = ? AND ut.task_id = t.id AND ut.user_id = ?");
-        $stmt->bind_param("ii", $task_id, $user_id);
         if ($stmt->execute()) {
             $res = array();
-            $stmt->bind_result($id, $task, $status, $created_at);
+            $stmt->bind_result($id, $nama, $kode_mk, $nama_mk, $sks);
             // TODO
             // $task = $stmt->get_result()->fetch_assoc();
             $stmt->fetch();
             $res["id"] = $id;
-            $res["task"] = $task;
-            $res["status"] = $status;
-            $res["created_at"] = $created_at;
+            $res["nama"] = $nama;
+            $res["kode_mk"] = $kode_mk;
+            $res["nama_mk"] = $nama_mk;
+            $res["sks"] = $sks;
             $stmt->close();
             return $res;
         } else {
@@ -258,56 +199,43 @@ class DbHandler {
     }
 
     /**
-     * Fetching all user tasks
-     * @param String $user_id id of the user
+     * get materi
+     * @param type $kode_mk
+     * @param type $id
+     * @return type
      */
-    public function getAllUserTasks($user_id) {
-        $stmt = $this->conn->prepare("SELECT t.* FROM tasks t, user_tasks ut WHERE t.id = ut.task_id AND ut.user_id = ?");
-        $stmt->bind_param("i", $user_id);
-        $stmt->execute();
-        $tasks = $stmt->get_result();
-        $stmt->close();
-        return $tasks;
+    public function getMateri($kode_mk, $id) {
+        $stmt = $this->conn->prepare("SELECT mhs.nim, mk.kode_mk, mt.id_materi, mt.judul_materi, mt.deskripsi, mt.link_materi, mt.tanggal_upload "
+                . "FROM matakuliah mk, mahasiswa mhs, mahasiswa_ambil_mk ma, materi mt, dosen_ambil_mk da, dosen d "
+                . "WHERE mhs.nim = ? AND mk.kode_mk = ? AND mhs.nim = ma.nim AND mt.kode_mk = mk.kode_mk AND mt.nik = da.nik AND ma.kode_mk = mk.kode_mk AND da.nik = d.nik AND da.kode_mk = mk.kode_mk "
+                . "UNION SELECT d.nik, mk.kode_mk, mt.id_materi, mt.judul_materi, mt.deskripsi, mt.link_materi, mt.tanggal_upload "
+                . "FROM matakuliah mk, materi mt, dosen_ambil_mk da, dosen d "
+                . "WHERE d.nik = ? AND mk.kode_mk = ? AND mt.kode_mk = mk.kode_mk AND mt.nik = da.nik AND da.nik = d.nik");
+        $stmt->bind_param("ssss", $id, $kode_mk, $id, $kode_mk);
+        if ($stmt->execute()) {
+            $res = array();
+            $stmt->bind_result($id, $kode_mk, $id_materi, $judul_materi, $deskripsi, $link_materi, $tanggal_upload);
+            // TODO
+            // $task = $stmt->get_result()->fetch_assoc();
+            $stmt->fetch();
+            $res["id"] = $id;
+            $res["kode_mk"] = $kode_mk;
+            $res["id_materi"] = $id_materi;
+            $res["judul_materi"] = $judul_materi;
+            $res["deskripsi"] = $deskripsi;
+            $res["link_materi"] = $link_materi;
+            $res["tanggal_upload"] = $tanggal_upload;
+            $stmt->close();
+            return $res;
+        } else {
+            return NULL;
+        }
     }
 
-    /**
-     * Updating task
-     * @param String $task_id id of the task
-     * @param String $task task text
-     * @param String $status task status
-     */
-    public function updateTask($user_id, $task_id, $task, $status) {
-        $stmt = $this->conn->prepare("UPDATE tasks t, user_tasks ut set t.task = ?, t.status = ? WHERE t.id = ? AND t.id = ut.task_id AND ut.user_id = ?");
-        $stmt->bind_param("siii", $task, $status, $task_id, $user_id);
-        $stmt->execute();
-        $num_affected_rows = $stmt->affected_rows;
-        $stmt->close();
-        return $num_affected_rows > 0;
-    }
-
-    /**
-     * Deleting a task
-     * @param String $task_id id of the task to delete
-     */
-    public function deleteTask($user_id, $task_id) {
-        $stmt = $this->conn->prepare("DELETE t FROM tasks t, user_tasks ut WHERE t.id = ? AND ut.task_id = t.id AND ut.user_id = ?");
-        $stmt->bind_param("ii", $task_id, $user_id);
-        $stmt->execute();
-        $num_affected_rows = $stmt->affected_rows;
-        $stmt->close();
-        return $num_affected_rows > 0;
-    }
-
-    /* ------------- `user_tasks` table method ------------------ */
-
-    /**
-     * Function to assign a task to user
-     * @param String $user_id id of the user
-     * @param String $task_id id of the task
-     */
-    public function createUserTask($user_id, $task_id) {
-        $stmt = $this->conn->prepare("INSERT INTO user_tasks(user_id, task_id) values(?, ?)");
-        $stmt->bind_param("ii", $user_id, $task_id);
+    public function createMateri($kode_mk, $id, $judul, $desk, $link, $tanggal) {
+        $stmt = $this->conn->prepare("INSERT INTO materi (id_materi, nik, kode_mk, judul_materi, deskripsi, link_materi, tanggal_upload) "
+                . "VALUES (NULL, ?, ?, ?, ?, ?, ?);");
+        $stmt->bind_param("sssssi", $id, $kode_mk, $judul, $desk, $link, $tanggal);
         $result = $stmt->execute();
 
         if (false === $result) {
